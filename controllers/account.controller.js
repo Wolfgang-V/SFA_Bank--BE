@@ -1,5 +1,6 @@
 const BankUserModel = require('../models/bankUser.model');
 const transactionModel = require('../models/transaction.model');
+const { generateReference } = require('../models/utils/helper');
 
 
 
@@ -35,6 +36,7 @@ const deposit = async (req, res) => {
 
         await transactionModel.create({
             user: depositUser._id,
+            reference: generateReference(),
             accountNumber: depositUser.accountNumber,
             type: "deposit",
             amount: NumericalAmount,
@@ -101,6 +103,7 @@ const withdrawal = async (req, res) => {
 
         await transactionModel.create({
             user: withdrawalUser._id,
+            reference: generateReference(),
             accountNumber: withdrawalUser.accountNumber,
             type: "withdrawal",
             amount: NumericalAmount,
@@ -221,6 +224,7 @@ const Transfer = async (req, res) => {
 
         await transactionModel.create({
             user: senderUser._id,
+            reference: generateReference(),
             accountNumber: senderUser.accountNumber,
             type: "transfer",
             amount: NumericalAmount,

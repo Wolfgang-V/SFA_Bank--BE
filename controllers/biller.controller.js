@@ -56,15 +56,16 @@ const payBill = asyncHandler(async (req, res) => {
 
   const reference = generateReference();
 
-  // Create transaction record
+  // Create transaction record with correct field names matching transaction model
   const transaction = await Transaction.create({
-    senderAccountId: account._id,
-    transactionType: "bill_payment",
+    user: req.user._id,
+    reference: reference,
+    type: "bill_payment",
     amount: Number(amount),
+    senderAccount: account.accountNumber,
+    receiverAccount: biller.billerName,
     description: `Bill payment to ${biller.billerName}`,
-    referenceNumber: reference,
-    status: "successful",
-    completedAt: new Date(),
+    status: "success",
   });
 
   // Deduct from account
@@ -86,7 +87,7 @@ const payBill = asyncHandler(async (req, res) => {
     success: true,
     message: `Payment to ${biller.billerName} successful!`,
     data: {
-      referenceNumber: reference,
+      reference: reference,
       amount: Number(amount),
       newBalance: account.balance,
       paymentId: payment._id,
@@ -102,7 +103,7 @@ const getPayments = asyncHandler(async (req, res) => {
   const payments = await Payment.find({ accountId: { $in: accountIds } })
     .sort({ createdAt: -1 })
     .populate("billerId", "billerName category")
-    .populate("transactionId", "referenceNumber status");
+    .populate("transactionId", "reference status");
 
   res.status(200).json({ success: true, data: payments });
 });

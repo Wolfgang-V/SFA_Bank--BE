@@ -3,6 +3,7 @@ const BankUserModel = require('../models/bankUser.model');
 const transactionModel = require('../models/transaction.model');
 const bcrypt = require('bcrypt')
 const jwt = require('jsonwebtoken')
+const { generateReference } = require('../models/utils/helper');
 
 
 const deposit = async (req, res) => {
@@ -25,12 +26,13 @@ const deposit = async (req, res) => {
         depositUser.balance += NumericalAmount;
         await depositUser.save();
 
+        const reference = generateReference();
+
         await transactionModel.create({
             user: depositUser._id,
-            accountNumber: depositUser.accountNumber,
+            reference: reference,
             type: "deposit",
             amount: NumericalAmount,
-            balanceAfter: depositUser.balance,
             senderAccount: depositUser.accountNumber,
             receiverAccount: depositUser.accountNumber,
             description: `Deposit of ${NumericalAmount} to account ${depositUser.accountNumber}`,
@@ -39,7 +41,8 @@ const deposit = async (req, res) => {
 
         return res.status(200).send({
             message: "Deposit successful",
-            data: depositUser
+            data: depositUser,
+            reference: reference
         })
     }
     catch (err) {
@@ -75,12 +78,13 @@ const withdrawal = async (req, res) => {
         withdrawalUser.balance -= NumericalAmount;
         await withdrawalUser.save();
 
+        const reference = generateReference();
+
         await transactionModel.create({
             user: withdrawalUser._id,
-            accountNumber: withdrawalUser.accountNumber,
+            reference: reference,
             type: "withdrawal",
             amount: NumericalAmount,
-            balanceAfter: withdrawalUser.balance,
             senderAccount: withdrawalUser.accountNumber,
             receiverAccount: withdrawalUser.accountNumber,
             description: `Withdrawal of ${NumericalAmount} from account ${withdrawalUser.accountNumber}`,
@@ -90,7 +94,9 @@ const withdrawal = async (req, res) => {
         return res.status(200).send({
             message: "Withdrawal successful",
             data: withdrawalUser,
+            reference: reference,
             Transaction: {
+                reference: reference,
                 type: "withdrawal",
                 amount: NumericalAmount,
                 senderAccount: withdrawalUser.accountNumber,
@@ -157,12 +163,13 @@ const Transfer = async (req, res) => {
         await senderUser.save();
         await receiverUser.save();
 
+        const reference = generateReference();
+
         await transactionModel.create({
             user: senderUser._id,
-            accountNumber: senderUser.accountNumber,
+            reference: reference,
             type: "transfer",
             amount: NumericalAmount,
-            balanceAfter: senderUser.balance,
             senderAccount: senderUser.accountNumber,
             receiverAccount: receiverUser.accountNumber,
             description: `Transfer of ${NumericalAmount} from ${senderUser.fullName},(${senderUser.accountNumber}) to ${receiverUser.fullName},(${receiverUser.accountNumber})`,
@@ -172,6 +179,7 @@ const Transfer = async (req, res) => {
         return res.status(200).send({
             message: "Transfer successful",
             data: {
+                reference: reference,
                 sender: senderUser,
                 receiver: receiverUser,
                 amount: NumericalAmount,
