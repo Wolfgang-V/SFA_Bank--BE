@@ -1,6 +1,9 @@
 ﻿﻿const BankUser = require("../models/bankUser.model");
 const Account = require("../models/account.model");
+const OTPModel = require("../models/otp.model");
 const { sendTokenResponse, asyncHandler } = require("../models/utils/helper");
+const { mailSender } = require("../middleware/mailer");
+const otpGenerator = require("otp-generator");
 
 // POST /api/auth/register
 const register = asyncHandler(async (req, res) => {
@@ -60,10 +63,88 @@ const login = asyncHandler(async (req, res) => {
   sendTokenResponse(user, 200, res);
 });
 
-// POST /api/auth/forgot-password (placeholder)
+// POST /api/auth/forgot-password - Request OTP
 const forgotPassword = asyncHandler(async (req, res) => {
-  const { email } = req.body;
-  return res.status(200).json({ success: true, message: "If the account exists, reset instructions will be sent." });
+    const { email } = req.body;
+    
+    if (!email) {
+        return res.status(400).json({ success: false, message: "Email is required." });
+    }
+
+    const user = await BankUser.findOne({ email });
+    
+    if (!user) {
+        // Don't reveal if user exists
+        return res.status(200).json({ success: true, message: "If the account exists, an OTP will be sent." });
+    }
+
+    // Generate OTP
+    const otp = otpGenerator.generate(4, { 
+        upperCaseAlphabets: false, 
+        specialChars: false, 
+        lowerCaseAlphabets: false, 
+        digits: true 
+    });
+
+    // Save OTP to database
+    await OTPModel.create({ email, otp });
+
+    // Send OTP email
+    const result = await mailSender(
+        email,
+        "Password Reset OTP - SFA Bank",
+        "otpMail",
+        { 
+            otp: otp,
+            firstName: user.fullName.split(' ')[0]
+        }
+    );
+
+    if (!result.success) {
+        return res.status(500).json({ success: false, message: "Failed to send OTP email." });
+    }
+
+    return res.status(200).json({ success: true, message: "OTP sent successfully to your email." });
+});
+
+// POST /api/auth/reset-password - Verify OTP and reset password
+const resetPassword = asyncHandler(async (req, res) => {
+    const { email, otp, newPassword } = req.body;
+    
+    if (!email || !otp || !newPassword) {
+        return res.status(400).json({ success: false, message: "Email, OTP, and new password are required." });
+    }
+
+    // Find valid OTP
+    const validOTP = await OTPModel.findOne({ email, otp }).sort({ createdAt: -1 });
+    
+    if (!validOTP) {
+        return res.status(400).json({ success: false, message: "Invalid or expired OTP." });
+    }
+
+    // Check if OTP is expired (handled by MongoDB TTL, but double check)
+    const now = new Date();
+    const otpTime = new Date(validOTP.createdAt);
+    const diffMinutes = (now - otpTime) / 1000 / 60;
+    
+    if (diffMinutes > 5) {
+        return res.status(400).json({ success: false, message: "OTP has expired." });
+    }
+
+    // Find user and update password
+    const user = await BankUser.findOne({ email });
+    
+    if (!user) {
+        return res.status(404).json({ success: false, message: "User not found." });
+    }
+
+    user.password = newPassword;
+    await user.save();
+
+    // Delete used OTP
+    await OTPModel.deleteMany({ email });
+
+    return res.status(200).json({ success: true, message: "Password reset successfully." });
 });
 
 // GET /api/auth/me
@@ -72,4 +153,16 @@ const getMe = asyncHandler(async (req, res) => {
   res.status(200).json({ success: true, data: user.toSafeObject() });
 });
 
-module.exports = { register, login, forgotPassword, getMe };
+// GET /api/auth/users/:id - Get user by ID
+const getUserById = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+  const user = await BankUser.findById(id);
+  
+  if (!user) {
+    return res.status(404).json({ success: false, message: "User not found" });
+  }
+  
+  res.status(200).json({ success: true, data: user.toSafeObject() });
+});
+
+module.exports = { register, login, forgotPassword, resetPassword, getMe, getUserById };

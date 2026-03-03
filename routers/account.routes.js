@@ -99,12 +99,18 @@ router.get("/:id", async (req, res) => {
 // GET /api/accounts/:id/transactions - Get transactions for a specific account
 router.get("/:id/transactions", async (req, res) => {
     try {
+        console.log("Fetching transactions for account ID:", req.params.id);
+        console.log("User ID from token:", req.user._id);
+        
         const account = await Account.findOne({ _id: req.params.id, userId: req.user._id });
+        
+        console.log("Found account:", account);
         
         let accountNumber;
         if (!account) {
             // Try to get from BankUser
             const bankUser = await BankUserModel.findById(req.params.id);
+            console.log("Found bankUser:", bankUser);
             if (!bankUser || bankUser._id.toString() !== req.user._id.toString()) {
                 return res.status(404).json({ success: false, message: "Account not found" });
             }
@@ -113,12 +119,16 @@ router.get("/:id/transactions", async (req, res) => {
             accountNumber = account.accountNumber;
         }
 
+        console.log("Searching transactions for account number:", accountNumber);
+
         const transactions = await TransactionModel.find({
             $or: [
                 { senderAccount: accountNumber },
                 { receiverAccount: accountNumber }
             ]
         }).sort({ createdAt: -1 });
+
+        console.log("Found transactions count:", transactions.length);
 
         return res.status(200).json({ success: true, data: transactions });
     } catch (error) {

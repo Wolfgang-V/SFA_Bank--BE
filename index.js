@@ -2,6 +2,7 @@ const express = require("express");
 const mongoose = require("mongoose");
 const cors = require("cors");
 const dotenv = require("dotenv");
+const path = require("path");
 
 // Route imports
 const authRoutes = require("./routers/auth.routes");
@@ -21,9 +22,17 @@ dotenv.config();
 
 const app = express();
 
+// ─── VIEW ENGINE ─────────────────────────────────────────────
+app.set("view engine", "ejs");
+app.set("views", path.join(__dirname, "views"));
+
 // ─── MIDDLEWARE ───────────────────────────────────────────────
 app.use(cors({
-  origin: process.env.FRONTEND_URL || "http://localhost:5173",
+  origin: [
+    process.env.FRONTEND_URL || "http://localhost:5173",
+    "http://localhost:5000",
+    "http://127.0.0.1:5000"
+  ],
   credentials: true,
 }));
 app.use(express.json());
@@ -56,6 +65,29 @@ app.get("/", (req, res) => {
     message: "🏦 SFA Bank API is running",
     version: "6.9.0",
     status: "healthy",
+  });
+});
+
+// ─── VIEW ROUTES ─────────────────────────────────────────────
+app.get("/forgot-password", (req, res) => {
+  res.render("forgot-password");
+});
+
+app.get("/login", (req, res) => {
+  res.render("login");
+});
+
+app.get("/register", (req, res) => {
+  res.render("register");
+});
+
+// ─── DEBUG ENDPOINT ───────────────────────────────────────────
+app.get("/debug/env", (req, res) => {
+  res.json({
+    NODE_MAIL: process.env.NODE_MAIL ? "✓ Set" : "✗ Not set",
+    NODE_PASSWORD: process.env.NODE_PASSWORD ? "✓ Set" : "✗ Not set",
+    MONGO_URI: process.env.MONGO_URI ? "✓ Set" : "✗ Not set",
+    JWT_SECRET: process.env.JWT_SECRET ? "✓ Set" : "✗ Not set"
   });
 });
 

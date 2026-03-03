@@ -1,8 +1,11 @@
 const express = require('express');
 const BankUserModel = require('../models/bankUser.model');
-const bcrypt = require('bcrypt')
+const OTPModel = require('../models/otp.model');
+const bcrypt = require('bcryptjs')
 const jwt = require('jsonwebtoken')
 const crypto = require("crypto");
+const otpGenerator = require("otp-generator");
+const { mailSender } = require('../middleware/mailer');
 
 const generateAccountNumber = () => {
     return crypto.randomInt(1000000000, 9999999999).toString();

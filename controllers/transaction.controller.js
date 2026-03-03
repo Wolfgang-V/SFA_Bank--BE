@@ -1,7 +1,8 @@
+
 const express = require('express');
 const BankUserModel = require('../models/bankUser.model');
+const bcrypt = require('bcryptjs')
 const transactionModel = require('../models/transaction.model');
-const bcrypt = require('bcrypt')
 const jwt = require('jsonwebtoken')
 const { generateReference } = require('../models/utils/helper');
 
