@@ -29,6 +29,27 @@ app.set("views", path.join(__dirname, "views"));
 
 
 // ───────────────── MIDDLEWARE ─────────────────
+// ───────────────── MIDDLEWARE ─────────────────
+
+// Fix for Vercel preflight
+app.use((req, res, next) => {
+  res.header("Access-Control-Allow-Origin", "https://sfa-bank-fe.vercel.app");
+  res.header(
+    "Access-Control-Allow-Headers",
+    "Origin, X-Requested-With, Content-Type, Accept, Authorization"
+  );
+  res.header(
+    "Access-Control-Allow-Methods",
+    "GET, POST, PUT, DELETE, OPTIONS"
+  );
+
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
+
+  next();
+});
+
 const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost:5000",
@@ -38,28 +59,14 @@ const allowedOrigins = [
 
 app.use(
   cors({
-    origin: function (origin, callback) {
-      // allow requests with no origin (like Postman)
-      if (!origin) return callback(null, true);
-
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      } else {
-        return callback(new Error("Not allowed by CORS"));
-      }
-    },
+    origin: allowedOrigins,
     credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
-
-app.options("*", cors());
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(rateLimiter);
-
 
 // ───────────────── DATABASE CONNECTION ─────────────────
 let cached = global.mongoose;
