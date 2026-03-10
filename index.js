@@ -14,7 +14,7 @@ const billerRoutes = require("./routers/biller.routes");
 const paymentRoutes = require("./routers/payment.routes");
 const { settingsRouter, securityRouter } = require("./routers/settings.routes");
 
-// Middleware imports
+// Middleware
 const errorHandler = require("./middleware/errorHandler");
 const rateLimiter = require("./middleware/rateLimiter");
 
@@ -22,53 +22,75 @@ dotenv.config();
 
 const app = express();
 
-// ─── VIEW ENGINE ─────────────────────────────────────────────
+
+// ───────────────── VIEW ENGINE ─────────────────
 app.set("view engine", "ejs");
 app.set("views", path.join(__dirname, "views"));
 
-// ─── MIDDLEWARE ───────────────────────────────────────────────
-app.use(cors({
-  origin: [
-    process.env.FRONTEND_URL || "http://localhost:5173",
-    "http://localhost:5000",
-    "http://127.0.0.1:5000"
-  ],
-  credentials: true,
-}));
+
+// ───────────────── MIDDLEWARE ─────────────────
+app.use(
+  cors({
+    origin: [
+      process.env.FRONTEND_URL || "http://localhost:5173",
+      "http://localhost:5000",
+      "http://127.0.0.1:5000",
+    ],
+    credentials: true,
+  })
+);
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(rateLimiter); // Apply rate limiting to all routes
+app.use(rateLimiter);
 
-// ─── DATABASE CONNECTION ──────────────────────────────────────
-mongoose
-  .connect(process.env.MONGO_URI)
-  .then(() => console.log("✅ MongoDB connected successfully"))
-  .catch((err) => {
-    console.error("❌ MongoDB connection failed:", err.message);
-    process.exit(1);
-  });
 
-// ─── ROUTES ───────────────────────────────────────────────────
-app.use("/api/auth",         authRoutes);
-app.use("/api/users",        userRoutes);
-app.use("/api/accounts",     accountRoutes);
+// ───────────────── DATABASE CONNECTION ─────────────────
+let cached = global.mongoose;
+
+if (!cached) {
+  cached = global.mongoose = { conn: null, promise: null };
+}
+
+async function connectDB() {
+  if (cached.conn) return cached.conn;
+
+  if (!cached.promise) {
+    cached.promise = mongoose.connect(process.env.MONGO_URI, {
+      bufferCommands: false,
+    });
+  }
+
+  cached.conn = await cached.promise;
+
+  console.log("✅ MongoDB connected");
+  return cached.conn;
+}
+
+
+// ───────────────── ROUTES ─────────────────
+app.use("/api/auth", authRoutes);
+app.use("/api/users", userRoutes);
+app.use("/api/accounts", accountRoutes);
 app.use("/api/transactions", transactionRoutes);
-app.use("/api/transfers",    transferRoutes);
-app.use("/api/billers",      billerRoutes);
-app.use("/api/payments",     paymentRoutes);
-app.use("/api/settings",     settingsRouter);
-app.use("/api/security",     securityRouter);
+app.use("/api/transfers", transferRoutes);
+app.use("/api/billers", billerRoutes);
+app.use("/api/payments", paymentRoutes);
+app.use("/api/settings", settingsRouter);
+app.use("/api/security", securityRouter);
 
-// ─── HEALTH CHECK ─────────────────────────────────────────────
+
+// ───────────────── HEALTH CHECK ─────────────────
 app.get("/", (req, res) => {
   res.json({
     message: "🏦 SFA Bank API is running",
-    version: "6.9.0",
+    version: "7.0.0",
     status: "healthy",
   });
 });
 
-// ─── VIEW ROUTES ─────────────────────────────────────────────
+
+// ───────────────── VIEW ROUTES ─────────────────
 app.get("/forgot-password", (req, res) => {
   res.render("forgot-password");
 });
@@ -81,21 +103,36 @@ app.get("/register", (req, res) => {
   res.render("register");
 });
 
-// ─── DEBUG ENDPOINT ───────────────────────────────────────────
+
+// ───────────────── DEBUG ROUTE ─────────────────
 app.get("/debug/env", (req, res) => {
   res.json({
     NODE_MAIL: process.env.NODE_MAIL ? "✓ Set" : "✗ Not set",
     NODE_PASSWORD: process.env.NODE_PASSWORD ? "✓ Set" : "✗ Not set",
     MONGO_URI: process.env.MONGO_URI ? "✓ Set" : "✗ Not set",
-    JWT_SECRET: process.env.JWT_SECRET ? "✓ Set" : "✗ Not set"
+    JWT_SECRET: process.env.JWT_SECRET ? "✓ Set" : "✗ Not set",
   });
 });
 
-// ─── ERROR HANDLER (must be last) ────────────────────────────
+
+// ───────────────── ERROR HANDLER ─────────────────
 app.use(errorHandler);
 
-// ─── START SERVER ─────────────────────────────────────────────
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
-});
+
+// ───────────────── LOCAL SERVER ─────────────────
+if (!process.env.VERCEL) {
+  const PORT = process.env.PORT || 5000;
+
+  connectDB().then(() => {
+    app.listen(PORT, () => {
+      console.log(`🚀 Server running locally on http://localhost:${PORT}`);
+    });
+  });
+}
+
+
+// ───────────────── VERCEL SERVERLESS EXPORT ─────────────────
+module.exports = async (req, res) => {
+  await connectDB();
+  return app(req, res);
+};
