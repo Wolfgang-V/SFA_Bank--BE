@@ -7,7 +7,7 @@ const billerSchema = new mongoose.Schema(
     billerCode: { type: String, required: true, unique: true, trim: true },
     category: {
       type: String,
-      enum: ["electricity", "internet", "cable", "water", "phone", "other"],
+      enum: ["electricity", "internet", "cable", "water", "phone", "betting", "other"],
       default: "other",
     },
     isActive: { type: Boolean, default: true },

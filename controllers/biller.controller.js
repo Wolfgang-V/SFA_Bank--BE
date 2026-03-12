@@ -2,6 +2,7 @@
 const { Biller, Payment } = require("../models/other.model");
 const Account = require("../models/account.model");
 const Transaction = require("../models/transaction.model");
+const BankUser = require("../models/bankUser.model");
 const { generateReference, asyncHandler } = require("../models/utils/helper");
 
 // GET /api/billers — Get all active billers
@@ -25,12 +26,52 @@ const getBiller = asyncHandler(async (req, res) => {
 
 // POST /api/payments — Pay a bill
 const payBill = asyncHandler(async (req, res) => {
-  const { accountNumber, billerId, amount, customerReference } = req.body;
+  const { accountNumber, billerId, billerCode, amount, customerReference, pin } = req.body;
 
-  if (!accountNumber || !billerId || !amount) {
+  // Validate PIN
+  if (!pin) {
     return res.status(400).json({
       success: false,
-      message: "Account number, biller, and amount are required.",
+      message: "Transaction PIN is required",
+      requiresPin: true
+    });
+  }
+
+  if (!accountNumber || !amount) {
+    return res.status(400).json({
+      success: false,
+      message: "Account number and amount are required.",
+    });
+  }
+
+  if (!billerId && !billerCode) {
+    return res.status(400).json({
+      success: false,
+      message: "Biller information is required.",
+    });
+  }
+
+  // Find user with transactionPin included
+  const user = await BankUser.findById(req.user._id).select("+transactionPin");
+
+  if (!user) {
+    return res.status(404).json({ success: false, message: "User not found." });
+  }
+
+  // Verify transaction PIN
+  if (!user.transactionPin) {
+    return res.status(400).json({
+      success: false,
+      message: "Transaction PIN not set. Please set up your PIN first.",
+      requiresPinSetup: true
+    });
+  }
+
+  const isPinValid = await user.compareTransactionPin(pin);
+  if (!isPinValid) {
+    return res.status(401).json({
+      success: false,
+      message: "Invalid transaction PIN"
     });
   }
 
@@ -49,7 +90,32 @@ const payBill = asyncHandler(async (req, res) => {
     return res.status(400).json({ success: false, message: "Insufficient balance." });
   }
 
-  const biller = await Biller.findById(billerId);
+  // Find biller - try by _id first, then by billerCode
+  let biller = null;
+  
+  // Check if billerId is a valid MongoDB ObjectId
+  const mongoose = require("mongoose");
+  const isValidObjectId = mongoose.Types.ObjectId.isValid(billerId);
+  
+  if (billerId && isValidObjectId) {
+    biller = await Biller.findById(billerId);
+  }
+  
+  // If not found by _id, try by billerCode
+  if (!biller && billerCode) {
+    biller = await Biller.findOne({ billerCode: billerCode.toUpperCase() });
+  }
+  
+  // If still not found, try by billerId as a fallback (for frontend string IDs)
+  if (!biller && billerId) {
+    biller = await Biller.findOne({ 
+      $or: [
+        { billerCode: billerId.toUpperCase() },
+        { _id: billerId }
+      ]
+    });
+  }
+
   if (!biller) {
     return res.status(404).json({ success: false, message: "Biller not found." });
   }
