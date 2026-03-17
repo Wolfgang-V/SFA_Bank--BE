@@ -29,6 +29,25 @@ const register = asyncHandler(async (req, res) => {
     status: "active"
   });
 
+  // Send welcome email
+  try {
+    const firstName = fullName.split(' ')[0];
+    const lastName = fullName.split(' ').slice(1).join(' ') || '';
+    await mailSender(
+      email,
+      "Welcome to SFA Bank!",
+      "welcomeMail",
+      { 
+        firstName,
+        lastName, 
+        bankName: 'SFA Bank'
+      }
+    );
+    console.log('Welcome email sent to', email);
+  } catch (emailError) {
+    console.error('Welcome email failed for', email + ':', emailError.message);
+  }
+
   sendTokenResponse(user, 201, res);
 });
 
