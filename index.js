@@ -83,6 +83,7 @@ const allowedOrigins = [
   "http://127.0.0.1:5173",
   "http://127.0.0.1:5174",
   "https://sfa-bank-fe.vercel.app",
+  "https://sfabank.vercel.app"
 ];
 
 app.use((req, res, next) => {
