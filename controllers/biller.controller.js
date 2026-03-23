@@ -1,8 +1,10 @@
 // ─── BILLER CONTROLLER ───────────────────────────────────────
+const mongoose = require("mongoose");
+
 const { Biller, Payment } = require("../models/other.model");
 const Account = require("../models/account.model");
 const Transaction = require("../models/transaction.model");
-const BankUser = require("../models/bankUser.model");
+const BankUserModel = require("../models/bankUser.model");
 const { generateReference, asyncHandler } = require("../models/utils/helper");
 
 // GET /api/billers — Get all active billers
@@ -52,14 +54,14 @@ const payBill = asyncHandler(async (req, res) => {
   }
 
   // Find user with transactionPin included
-  const user = await BankUser.findById(req.user._id).select("+transactionPin");
+  const bankUser = await BankUserModel.findById(req.user._id).select("+transactionPin");
 
-  if (!user) {
+  if (!bankUser) {
     return res.status(404).json({ success: false, message: "User not found." });
   }
 
   // Verify transaction PIN
-  if (!user.transactionPin) {
+  if (!bankUser.transactionPin) {
     return res.status(400).json({
       success: false,
       message: "Transaction PIN not set. Please set up your PIN first.",
@@ -67,7 +69,7 @@ const payBill = asyncHandler(async (req, res) => {
     });
   }
 
-  const isPinValid = await user.compareTransactionPin(pin);
+  const isPinValid = await bankUser.compareTransactionPin(pin);
   if (!isPinValid) {
     return res.status(401).json({
       success: false,
@@ -86,15 +88,18 @@ const payBill = asyncHandler(async (req, res) => {
     return res.status(404).json({ success: false, message: "Account not found." });
   }
 
-  if (account.balance < Number(amount)) {
+  if (bankUser.balance < Number(amount)) {
     return res.status(400).json({ success: false, message: "Insufficient balance." });
   }
 
-  // Find biller - try by _id first, then by billerCode
+  // Start MongoDB session for atomic transaction
+  const session = await mongoose.startSession();
+  session.startTransaction();
+
   let biller = null;
+  try {
   
   // Check if billerId is a valid MongoDB ObjectId
-  const mongoose = require("mongoose");
   const isValidObjectId = mongoose.Types.ObjectId.isValid(billerId);
   
   if (billerId && isValidObjectId) {
@@ -120,45 +125,102 @@ const payBill = asyncHandler(async (req, res) => {
     return res.status(404).json({ success: false, message: "Biller not found." });
   }
 
-  const reference = generateReference();
+    // Find biller within transaction
+    if (billerId && mongoose.Types.ObjectId.isValid(billerId)) {
+      biller = await Biller.findById(billerId);
+    }
+    if (!biller && billerCode) {
+      biller = await Biller.findOne({ billerCode: billerCode.toUpperCase() });
+    }
+    if (!biller && billerId) {
+      biller = await Biller.findOne({ 
+        $or: [
+          { billerCode: billerId.toUpperCase() },
+          { _id: billerId }
+        ]
+      });
+    }
 
-  // Create transaction record with correct field names matching transaction model
-  const transaction = await Transaction.create({
-    user: req.user._id,
-    reference: reference,
-    type: "bill_payment",
-    amount: Number(amount),
-    senderAccount: account.accountNumber,
-    receiverAccount: biller.billerName,
-    description: `Bill payment to ${biller.billerName}`,
-    status: "success",
-  });
+    if (!biller) {
+      throw new Error("Biller not found");
+    }
 
-  // Deduct from account
-  account.balance -= Number(amount);
-  await account.save();
+    const reference = generateReference();
 
-  // Create payment record
-  const payment = await Payment.create({
-    accountId: account._id,
-    billerId: biller._id,
-    transactionId: transaction._id,
-    amount: Number(amount),
-    customerReference,
-    status: "successful",
-    completedAt: new Date(),
-  });
+    // Deduct from PRIMARY balance (BankUser)
+    bankUser.balance -= Number(amount);
+    await bankUser.save({ session });
 
-  res.status(200).json({
-    success: true,
-    message: `Payment to ${biller.billerName} successful!`,
-    data: {
+    // Sync to Account (secondary)
+    account.balance = bankUser.balance;
+    await account.save({ session });
+
+    // Create transaction record 
+    const transaction = await Transaction.create([{
+      user: req.user._id,
       reference: reference,
+      type: "bill_payment",
       amount: Number(amount),
-      newBalance: account.balance,
-      paymentId: payment._id,
-    },
-  });
+      senderAccount: account.accountNumber,
+      receiverAccount: biller.billerName,
+      description: `Bill payment to ${biller.billerName}`,
+      status: "success",
+    }], { session });
+
+    // Create payment record
+    const payment = await Payment.create([{
+      accountId: account._id,
+      billerId: biller._id,
+      transactionId: transaction[0]._id,
+      amount: Number(amount),
+      customerReference,
+      status: "successful",
+      completedAt: new Date(),
+    }], { session });
+
+    await session.commitTransaction();
+    session.endSession();
+
+    // Send debit alert email
+    try {
+      const firstName = bankUser.fullName.split(' ')[0];
+      await mailSender(
+        bankUser.email,
+        "SFA Bank - Debit Alert", 
+        "debitAlert",
+        {
+          firstName,
+          amount: Number(amount).toLocaleString(),
+          newBalance: bankUser.balance.toLocaleString(),
+          accountNumber: account.accountNumber,
+          reference,
+          description: `Bill payment to ${biller.billerName}`,
+          formattedDate: new Date().toLocaleString('en-NG', { 
+            dateStyle: 'medium', 
+            timeStyle: 'short' 
+          })
+        }
+      );
+      console.log('Debit alert sent to', bankUser.email);
+    } catch (emailError) {
+      console.error('Debit alert failed:', emailError.message);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Payment to ${biller.billerName} successful!`,
+      data: {
+        reference: reference,
+        amount: Number(amount),
+        newBalance: bankUser.balance,
+        paymentId: payment._id,
+      },
+    });
+  } catch (error) {
+    await session.abortTransaction();
+    session.endSession();
+    throw error;  // Let asyncHandler catch
+  }
 });
 
 // GET /api/payments — Payment history

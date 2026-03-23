@@ -80,6 +80,25 @@ const login = asyncHandler(async (req, res) => {
   }
 
   sendTokenResponse(user, 200, res);
+
+  // Send login alert email
+  try {
+    const firstName = user.fullName.split(' ')[0];
+    await mailSender(
+      user.email,
+      "SFA Bank - New Login Detected", 
+      "loginAlert",
+      { 
+        firstName,
+        device: req.headers['user-agent'] || 'Unknown',
+        ip: req.ip || req.connection.remoteAddress || 'Unknown',
+        location: 'Nigeria' // Add geolocation service later
+      }
+    );
+    console.log('Login alert sent to', user.email);
+  } catch (emailError) {
+    console.error('Login alert failed:', emailError.message);
+  }
 });
 
 // POST /api/auth/forgot-password - Request OTP

@@ -21,16 +21,18 @@ const deposit = async (req, res) => {
                 message: "Minimum deposit amount is 100"
             })
         }
-        const depositUser = await BankUserModel.findOne({ accountNumber });
+        const depositUser = await BankUserModel.findOne({ 
+            accountNumber,
+            _id: req.user._id 
+        });
 
         if (!depositUser) {
             return res.status(404).send({
-                message: "No user found"
+                message: "Account not found"
             })
         }
 
         depositUser.balance += NumericalAmount;
-
         await depositUser.save();
 
 
@@ -48,6 +50,23 @@ const deposit = async (req, res) => {
 
         })
 
+        await mailSender(
+          depositUser.email,
+          "SFA Bank - Deposit Confirmation", 
+          "depositAlert",
+          {
+            firstName: depositUser.fullName.split(' ')[0],
+            amount: NumericalAmount.toLocaleString(),
+            newBalance: depositUser.balance.toLocaleString(),
+            accountNumber: depositUser.accountNumber,
+            reference: 'DEP-' + Date.now(),
+            formattedDate: new Date().toLocaleString('en-NG', { 
+              dateStyle: 'medium', 
+              timeStyle: 'short' 
+            })
+          }
+        );
+        
         return res.status(200).send({
             message: "Deposit successful",
             data: depositUser
@@ -64,6 +83,8 @@ const deposit = async (req, res) => {
         })
     }
 }
+
+const { mailSender } = require('../middleware/mailer');
 
 
 const withdrawal = async (req, res) => {
@@ -115,6 +136,25 @@ const withdrawal = async (req, res) => {
 
         })
 
+
+        // Send debit alert email
+        await mailSender(
+          withdrawalUser.email,
+          "SFA Bank - Withdrawal Alert", 
+          "debitAlert",
+          {
+            firstName: withdrawalUser.fullName.split(' ')[0],
+            amount: NumericalAmount.toLocaleString(),
+            newBalance: withdrawalUser.balance.toLocaleString(),
+            accountNumber: withdrawalUser.accountNumber,
+            reference: 'WD-' + Date.now(),
+            description: `Withdrawal from account`,
+            formattedDate: new Date().toLocaleString('en-NG', { 
+              dateStyle: 'medium', 
+              timeStyle: 'short' 
+            })
+          }
+        );
 
         return res.status(200).send({
             message: "Withdrawal successful",
@@ -234,6 +274,43 @@ const Transfer = async (req, res) => {
             description: `Transfer of ${NumericalAmount} from ${senderUser.fullName},(${senderUser.accountNumber} ) to ${receiverUser.fullName},(${receiverUser.accountNumber})`,
             note: req.body.note || ""
         })
+
+        // Send debit alert to sender
+        await mailSender(
+          senderUser.email,
+          "SFA Bank - Transfer Debit Alert", 
+          "debitAlert",
+          {
+            firstName: senderUser.fullName.split(' ')[0],
+            amount: NumericalAmount.toLocaleString(),
+            newBalance: senderUser.balance.toLocaleString(),
+            accountNumber: senderUser.accountNumber,
+            reference: 'TR-' + Date.now(),
+            description: `Transfer to ${receiverUser.accountNumber}`,
+            formattedDate: new Date().toLocaleString('en-NG', { 
+              dateStyle: 'medium', 
+              timeStyle: 'short' 
+            })
+          }
+        );
+
+        // Send credit alert to receiver
+        await mailSender(
+          receiverUser.email,
+          "SFA Bank - Transfer Credit Alert", 
+          "depositAlert",
+          {
+            firstName: receiverUser.fullName.split(' ')[0],
+            amount: NumericalAmount.toLocaleString(),
+            newBalance: receiverUser.balance.toLocaleString(),
+            accountNumber: receiverUser.accountNumber,
+            reference: 'TR-' + Date.now(),
+            formattedDate: new Date().toLocaleString('en-NG', { 
+              dateStyle: 'medium', 
+              timeStyle: 'short' 
+            })
+          }
+        );
 
         return res.status(200).send({
             message: "Transfer successful",
